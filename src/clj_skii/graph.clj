@@ -17,49 +17,70 @@
   (> (get-in-map grid-map pos1) (get-in-map grid-map pos2)))
 
 ;; TODO  try clojure.match later
-(defn- step [region [r col :as old-position] move]
-  (let [new-position (case move
+(defn- step [region [r col :as old-position] direction slope-fn]
+  (let [new-position (case direction
                        :south [(inc r) col]
                        :north [(dec r) col]
                        :east  [r (inc col)]
                        :west  [r (dec col)]
                        old-position)]
-    (if (and (in-range region new-position) (slope-down region old-position new-position))
+    (if (and (in-range region new-position) (slope-fn region old-position new-position))
       new-position
       nil)))
 
-;; brute force with dfs
 ;; (defprotocol Graph
 ;;    (adjacent [graph v]))
-(defn adjacent
-  ([v] (adjacent skii-map v))
-  ([graph v]
-     "return adjacent vertexes of the parameter vertex"
-     (filter (comp not nil?) (map #(step graph v %) [:south :east :north :west]))))
+(defn outbound [graph v]
+  "return down vertexes of the parameter vertex"
+  (filter (comp not nil?) (map #(step graph v % slope-down) [:south :east :north :west])))
 
-;; DFS to get vertex in topological order
-(defn topological-sort [graph start-pos]
-  "dfs and return topological order of the graph from a start point and vertex set (without start-point)"
-  (loop [to-be-visit (adjacent graph start-pos)
-         endpoints (into #{} to-be-visit)
-         edge-to (reduce #(conj %1 [start-pos %2]) [] to-be-visit)
-         adjacent-map (reduce #(assoc %1 %2 [start-pos]) {} to-be-visit)]
+;; DFS to build graph first
+(defn build-graph [raw-map start-pos]
+  "build graph from map with a start point specified"
+  (loop [visited #{start-pos}
+         to-be-visit (outbound raw-map start-pos)
+         edge-set (reduce #(conj %1 [start-pos %2]) #{} (outbound raw-map start-pos))]
     (if (empty? to-be-visit)
-      {:top-order edge-to :vertexes endpoints :g adjacent-map}
-      (let [curr (first to-be-visit)
-            adjacents (adjacent graph curr)]
-        (recur (concat (rest to-be-visit) adjacents)
-               (into endpoints adjacents)
-               (concat edge-to
-                       (reduce #(conj %1 [curr %2]) [] (filter (comp not endpoints) adjacents)))
-               (merge-with (fn [x y] (concat x y))
-                                adjacent-map
-                                (reduce #(assoc %1 %2 [curr]) {} adjacents)))))))
+      {:vertexes visited :edges edge-set :raw raw-map}
+      (let [curr (first to-be-visit)]
+        (if (visited curr)
+          (recur visited
+                 (rest to-be-visit)
+                 edge-set)
+          (recur (conj visited curr)
+                 (concat (outbound raw-map curr) (rest to-be-visit))
+                 (into edge-set (reduce #(conj %1 [curr %2]) #{} (outbound raw-map curr)))))))))
 
-(defn relax [])
+;; run topological sort to get vertex in order
+(defn inbound [edges v]
+  (filter (fn [[_ p2]] (= v p2)) edges))
+
+(defn topological-sort [{:keys [edges raw] :as graph} start-pos]
+  (loop [ordered '()
+         pre-set (conj '() start-pos)
+         edges-set edges]
+    (if (empty? pre-set)
+      (reverse ordered)
+      (let [pre-v (first pre-set)
+            adjacents (outbound raw pre-v) ;; use the trick here instead use edges-set
+            outbound-edge (into #{} (map vector (repeat pre-v) adjacents))
+            new-edges-set (remove outbound-edge edges-set)
+            new-pre-set (filter (comp empty? (partial inbound new-edges-set)) adjacents)]
+        (recur (conj ordered pre-v)
+               (concat new-pre-set (rest pre-set))
+               new-edges-set)))))
+
+(defn relax [distant [from to]]
+  (if (< (distant to) (+ (distant from) 1))
+    (assoc distant to (+ (distant from) 1))
+    distant))
 
 (defn find-longest-path [graph start-pos]
-  (let [{:keys [top-order verts adj-map]} (topological-sort graph start-pos)]
-    (loop [order top-order
-           distant (zipmap verts (repeat 0))]
-      (map #() (adj-map (first order))))))
+  (let [{:keys [vertexes raw]} graph
+        top-order (topological-sort graph start-pos)
+        top-edges (mapcat #(map vector (repeat %) (outbound raw %)) top-order)
+        distant (merge (zipmap vertexes (repeat -1)) {start-pos 0})]
+    (println distant)
+    (println top-edges)
+    ;; (println (reduce relax distant '([[1 2] [2 2]] [[1 2] [1 3]])))
+    (reduce relax distant top-edges)))
