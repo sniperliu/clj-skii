@@ -75,12 +75,15 @@
     (assoc distant to (+ (distant from) 1))
     distant))
 
-(defn find-longest-path [graph start-pos]
+(defn find-longest-paths [graph start-pos]
   (let [{:keys [vertexes raw]} graph
         top-order (topological-sort graph start-pos)
         top-edges (mapcat #(map vector (repeat %) (outbound raw %)) top-order)
-        distant (merge (zipmap vertexes (repeat -1)) {start-pos 0})]
-    (println distant)
-    (println top-edges)
-    ;; (println (reduce relax distant '([[1 2] [2 2]] [[1 2] [1 3]])))
-    (reduce relax distant top-edges)))
+        distant (merge (zipmap vertexes (repeat -1)) {start-pos 0})
+        rs (sort-by second > (reduce relax distant top-edges))
+        l (second (first rs))
+        candidates (take-while #(= l (second %)) rs)]
+    (map (fn [[end-pos dist]]
+           {:start start-pos :end end-pos :length dist
+            :drop (- (get-in-map raw start-pos) (get-in-map raw end-pos))})
+         candidates)))
