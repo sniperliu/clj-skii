@@ -79,7 +79,7 @@
   (let [{:keys [vertexes raw]} graph
         top-order (topological-sort graph start-pos)
         top-edges (mapcat #(map vector (repeat %) (outbound raw %)) top-order)
-        distant (merge (zipmap vertexes (repeat -1)) {start-pos 0})
+        distant (merge (zipmap vertexes (repeat -1)) {start-pos 1})
         rs (sort-by second > (reduce relax distant top-edges))
         l (second (first rs))
         candidates (take-while #(= l (second %)) rs)]
